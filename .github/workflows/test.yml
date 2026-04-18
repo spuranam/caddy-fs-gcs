@@ -87,6 +87,9 @@ jobs:
       - name: Download dependencies
         run: task mod
 
+      - name: Install tools
+        run: task install-tools
+
       - name: Build
         run: go build ./...
 

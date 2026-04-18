@@ -696,6 +696,7 @@ tasks:
     cmds:
       - |
         set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
         go-test-coverage --config .testcoverage.yml
     sources:
       - "{{.COVER}}/cover.out"
@@ -716,6 +717,7 @@ tasks:
     cmds:
       - |
         set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
         # Generate baseline without diffing against itself.
         # --diff-base-breakdown-file-name "" disables the diff comparison
         # while still writing the breakdown file via breakdown-file-name in config.
@@ -738,6 +740,7 @@ tasks:
     cmds:
       - |
         set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
         if [ ! -f "{{.COVER}}/baseline.txt" ]; then
           echo "⚠️  Baseline not found at {{.COVER}}/baseline.txt"
           echo "   Run 'task coverage:baseline' to create one"
@@ -778,6 +781,7 @@ tasks:
     cmds:
       - |
         set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
         if [ ! -f "{{.BASELINE_FILE}}" ]; then
           echo "⚠️  Baseline not found at {{.BASELINE_FILE}}"
           echo "   Run 'task coverage:baseline' to create one"
