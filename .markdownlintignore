@@ -1,0 +1,11 @@
+dist/
+node_modules/
+e2e/docsy-site/node_modules/
+e2e/docsy-site/content/
+e2e/docsy-site/resources/
+e2e/docsy-site/tasks/
+e2e/site-content/
+refs/
+.gocache/
+.cache/
+.task/

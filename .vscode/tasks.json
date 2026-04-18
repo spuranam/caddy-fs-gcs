@@ -1,0 +1,420 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Project",
+      "type": "shell",
+      "command": "task",
+      "args": ["build"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Test Project",
+      "type": "shell",
+      "command": "task",
+      "args": ["test"],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Test with Coverage",
+      "type": "shell",
+      "command": "task",
+      "args": ["test:coverage"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Lint Project",
+      "type": "shell",
+      "command": "task",
+      "args": ["lint"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Install All Tools",
+      "type": "shell",
+      "command": "task",
+      "args": ["install-tools"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Run Development Server",
+      "type": "shell",
+      "command": "task",
+      "args": ["dev"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "dedicated",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "isBackground": true,
+      "problemMatcher": ["$go"],
+      "runOptions": {
+        "instanceLimit": 1
+      }
+    },
+    {
+      "label": "Clean Build",
+      "type": "shell",
+      "command": "task",
+      "args": ["clean"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Deploy to Kubernetes",
+      "type": "shell",
+      "command": "task",
+      "args": ["k8s:deploy"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Run Integration Tests",
+      "type": "shell",
+      "command": "task",
+      "args": ["test:integration"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Generate Documentation",
+      "type": "shell",
+      "command": "task",
+      "args": ["docs:generate"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Security Scan",
+      "type": "shell",
+      "command": "task",
+      "args": ["security:scan"],
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Go: Generate Tests",
+      "type": "shell",
+      "command": "go",
+      "args": ["generate", "./..."],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Docker: Build Image",
+      "type": "shell",
+      "command": "docker",
+      "args": ["build", "-t", "caddy-fs-gcs:dev", "."],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "Markdown Lint Check",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md"
+    },
+    {
+      "label": "Markdown Lint Check 2",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md"
+    },
+    {
+      "label": "Markdown Lint Fix",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 --fix README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md 2>&1; echo 'DONE'"
+    },
+    {
+      "label": "Markdown Lint Check 3",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md"
+    },
+    {
+      "label": "Prettier format",
+      "type": "shell",
+      "command": "npx --yes prettier --write README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md 2>&1; echo 'DONE'"
+    },
+    {
+      "label": "Markdown Lint Check 4",
+      "type": "shell",
+      "command": "npx markdownlint-cli2 README.md docs/CONFIGURATION.md docs/OPERATIONS.md docs/DEVELOPER-GUIDE.md docs/README.md"
+    },
+    {
+      "label": "Lint Check",
+      "type": "shell",
+      "command": "golangci-lint",
+      "args": ["run", "./..."]
+    },
+    {
+      "label": "Lint Verify",
+      "type": "shell",
+      "command": "golangci-lint",
+      "args": ["run", "./..."]
+    },
+    {
+      "label": "Run New Tests",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/errorpages/",
+        "./pkg/gcs/fs/",
+        "-v",
+        "-count=1"
+      ]
+    },
+    {
+      "label": "Run New Tests 2",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/errorpages/",
+        "./pkg/gcs/fs/",
+        "-v",
+        "-count=1"
+      ]
+    },
+    {
+      "label": "Coverage Check",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:check"]
+    },
+    {
+      "label": "Run Tests 3",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/errorpages/",
+        "./pkg/gcs/fs/",
+        "-count=1",
+        "-timeout=30s"
+      ]
+    },
+    {
+      "label": "Run Error Tests",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/fs/",
+        "-run",
+        "TestRead|TestFileStat|TestFSStat|TestReadDir|TestSeekEnd|TestMissing|TestEmpty",
+        "-count=1",
+        "-timeout=60s",
+        "-v"
+      ]
+    },
+    {
+      "label": "Run New Error Tests",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/fs/",
+        "-run",
+        "TestRead|TestFileStat|TestFSStat|TestReadDir|TestSeekEnd|TestUnmarshalCaddyfileMissing|TestUnmarshalCaddyfileEmpty",
+        "-count=1",
+        "-timeout=60s",
+        "-v"
+      ]
+    },
+    {
+      "label": "Test ReadError",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/fs/",
+        "-run",
+        "^TestReadError$",
+        "-count=1",
+        "-timeout=30s",
+        "-v"
+      ]
+    },
+    {
+      "label": "All New Tests",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/errorpages/",
+        "./pkg/gcs/fs/",
+        "-count=1",
+        "-timeout=60s"
+      ]
+    },
+    {
+      "label": "Coverage Check 2",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:check"]
+    },
+    {
+      "label": "Test FS Package",
+      "type": "shell",
+      "command": "go",
+      "args": ["test", "./pkg/gcs/fs/", "-count=1", "-timeout=60s"]
+    },
+    {
+      "label": "Coverage Check 3",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:check"]
+    },
+    {
+      "label": "Test Config+Health",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/gcs/config/",
+        "./pkg/health/",
+        "-count=1",
+        "-timeout=30s"
+      ]
+    },
+    {
+      "label": "Coverage Check 4",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:check"]
+    },
+    {
+      "label": "Test Metrics",
+      "type": "shell",
+      "command": "go",
+      "args": [
+        "test",
+        "./pkg/observability/metrics/",
+        "-count=1",
+        "-timeout=30s"
+      ]
+    },
+    {
+      "label": "Coverage Check 5",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:check"]
+    },
+    {
+      "label": "Update Baseline",
+      "type": "shell",
+      "command": "task",
+      "args": ["coverage:baseline"]
+    },
+    {
+      "label": "Why pgx",
+      "type": "shell",
+      "command": "go",
+      "args": ["mod", "why", "-m", "github.com/jackc/pgx/v5"]
+    }
+  ]
+}

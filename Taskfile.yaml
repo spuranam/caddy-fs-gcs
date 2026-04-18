@@ -1,0 +1,1090 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# https://taskfile.dev/blog/windows-core-utils
+
+version: "3"
+
+vars:
+  NAME: "caddy"
+  DESCRIPTION: "Caddy v2 plugin to serve static files from Google Cloud Storage buckets"
+  DEFAULT_GO_VERSION: "1.26.2"
+  GOIMPORTS_VERSION: "v0.44.0"
+  GOFUMPT_VERSION: "v0.9.2"
+  GOLANGCI_LINT_VERSION: "v2.11.4"
+  GOVULNCHECK_VERSION: "v1.1.4"
+  GOTESTCOVERAGE_VERSION: "v2.18.4"
+  TOOLS: "{{.ROOT_DIR | toSlash}}/.tool"
+  TOOLS_BIN: "{{.TOOLS}}"
+  DIST: "{{.ROOT_DIR | toSlash }}/dist"
+  PATH_SEP: "{{ if eq OS `windows` }};{{ else }}:{{ end }}"
+  # Portable PATH with .tool and .dist prepended (works on Windows, macOS, Linux)
+  TOOLS_PATH: "{{.TOOLS_BIN}}{{.PATH_SEP}}{{.DIST}}{{.PATH_SEP}}{{ env `PATH` }}"
+  OUTPUT_FILE: "{{.NAME | lower}}{{exeExt}}"
+  MAIN_PACKAGE: ./cmd/caddy
+  GIT_EVENT: "{{ .GIT_EVENT | default `pull_request` }}"
+  GIT_REF: "{{ .GIT_REF | default `main` }}"
+  BUILD_VERSION:
+    sh: |
+      git describe --tags --always --long --abbrev=12 2>/dev/null || echo "v0.0.1-alpha-0-g$(git rev-parse --short=12 HEAD 2>/dev/null || echo UNKNOWN)"
+  BUILD_TAG:
+    sh: |
+      printf "%s" "{{.BUILD_VERSION}}" | sed -E 's/^v//'
+  GO_VERSION:
+    sh: |
+      awk '/^toolchain go/{t=substr($2,3)} /^go /{g=$2} END{print t?t:g?g:"1.25"}' go.mod 2>/dev/null | tr -d '\r' || echo "{{.DEFAULT_GO_VERSION}}"
+  GOTOOLCHAIN: "go{{.GO_VERSION}}"
+  GIT_COMMIT:
+    sh: git rev-parse HEAD || echo "unknown"
+  GIT_SHA:
+    sh: git rev-parse --short=12 HEAD || echo "unknown"
+  GIT_BRANCH:
+    sh: git branch --show-current || echo "unknown"
+  #GIT_BRANCH:
+  #  sh: git rev-parse --abbrev-ref HEAD || echo "unknown"
+  GIT_URL:
+    sh: git remote get-url origin || echo "https://github.com"
+  IS_SHALLOW:
+    sh: git rev-parse --is-shallow-repository 2>/dev/null || echo "false"
+  CONTAINER_REGISTRY: "{{ .CONTAINER_REGISTRY | default `gcr.io` }}"
+  CONTAINER_REGISTRY_NAMESPACE: "{{ .CONTAINER_REGISTRY_NAMESPACE | default `pipelines` }}"
+  CONTAINER_IMAGE: "{{ .CONTAINER_REGISTRY }}/{{ .CONTAINER_REGISTRY_NAMESPACE }}/{{ .NAME }}"
+  BASE_CONTAINER_IMAGE: "registry.access.redhat.com/ubi10/ubi-minimal:10.1-1774545417@sha256:3c674490453d5fb3d655b15874d33fa5e8ba6b33fad9ea2954b143c896f98516"
+  BUILD_DATE: '{{ now | date "2006-01-02T15:04:05Z07:00" }}'
+  DATE: '{{ now | date "2006.01.02" }}'
+  BENCH_FILE: "bench/{{.DATE}}.{{.GIT_SHA}}.txt"
+  BENCH_BASELINE: "bench/baseline.txt"
+  COVER: "{{.ROOT_DIR | toSlash }}/cover"
+  DEFAULT_GOCACHE: "{{.ROOT_DIR | toSlash}}/.gocache"
+  FIXED_ROOT:
+    sh: |
+      echo "{{.ROOT_DIR | toSlash}}"
+  GOOS:
+    sh: |
+      go env -C / GOOS
+  GOARCH:
+    sh: |
+      go env -C / GOARCH
+  BUILD_PATH_VER: "{{ if eq .GOARCH `amd64` }}v1{{ else }}v8.0{{ end }}"
+  DIST_PATH: "dist/{{ .NAME }}_{{ .GOOS }}_{{ .GOARCH }}_{{ .BUILD_PATH_VER }}/{{ .NAME }}"
+  LDFLAGS: >-
+    -X github.com/spuranam/caddy-fs-gcs/pkg.Version={{.BUILD_VERSION}}
+    -X github.com/spuranam/caddy-fs-gcs/pkg.BuildTime={{.BUILD_DATE}}
+    -X github.com/spuranam/caddy-fs-gcs/pkg.Commit={{.GIT_COMMIT}}
+
+env:
+  CGO_ENABLED: "0"
+  GOEXPERIMENT: goroutineleakprofile
+  TASK_USE_BASH: "true"
+  GOTOOLCHAIN: "{{.GOTOOLCHAIN}}"
+  GOCACHE: "{{ env `GOCACHE` | default .DEFAULT_GOCACHE }}"
+  GOWORK: "off"
+  GOLANGCI_LINT_CACHE: "{{.ROOT_DIR}}/.cache/golangci-lint"
+  GOBIN: "{{.TOOLS_BIN}}"
+
+tasks:
+  clean:
+    desc: "Clean build artifacts, caches, and temporary files"
+    silent: true
+    cmds:
+      - |
+        echo "🧹 Cleaning build artifacts and caches..."
+
+        echo "  📦 Cleaning Go caches..."
+        go clean -cache -testcache -fuzzcache
+
+        echo "  🏗️  Cleaning build artifacts..."
+        rm -rf dist/
+        rm -rf build/
+        rm -rf bin/
+
+        echo "  📋 Cleaning task cache..."
+        rm -rf .task/
+
+        echo "  🗑️  Cleaning files..."
+        find ./ -name "*.tmp" -type f -delete
+        find ./ -name "*.temp" -type f -delete
+        find ./ -name ".DS_Store" -type f -delete
+        find ./ -name "Thumbs.db" -type f -delete
+
+  clean:cache:
+    desc: "Clean only Go caches (preserves build artifacts)"
+    silent: true
+    cmds:
+      - |
+        echo "🧹 Cleaning Go caches..."
+        go clean -cache -testcache -fuzzcache
+        echo "✅ Go caches cleaned"
+
+  clean:build:
+    desc: "Clean only build artifacts (preserves caches)"
+    silent: true
+    cmds:
+      - |
+        echo "🧹 Cleaning build artifacts..."
+        rm -rf dist/
+        rm -rf build/
+        rm -rf bin/
+        rm -rf .task/
+        echo "✅ Build artifacts cleaned"
+
+  default:
+    aliases:
+      - info
+    silent: true
+    desc: Display build and environment information
+    cmds:
+      - |
+        echo "------------------------------------------------------------"
+        echo "{{ .NAME }} Taskfile Information"
+        echo "------------------------------------------------------------"
+        echo "Purpose:"
+        echo "  {{ .NAME }} {{ .DESCRIPTION }}"
+        echo "Usage:"
+        echo "  task           # Prints this info section"
+        echo "  task test      # Tests the code"
+        echo "  task build     # Builds the code"
+        echo
+        echo "Variables and Values:"
+        echo "  BASE_CONTAINER_IMAGE:         {{ .BASE_CONTAINER_IMAGE }}"
+        echo "  BENCH_FILE:                   {{ .BENCH_FILE }}"
+        echo "  BENCH_BASELINE:               {{ .BENCH_BASELINE }}"
+        echo "  BUILD_DATE:                   {{ .BUILD_DATE }}"
+        echo "  BUILD_PATH_VER:               {{ .BUILD_PATH_VER }}"
+        echo "  BUILD_TAG:                    {{ .BUILD_TAG }}"
+        echo "  BUILD_VERSION:                {{ .BUILD_VERSION }}"
+        echo "  CONTAINER_REGISTRY_NAMESPACE: {{ .CONTAINER_REGISTRY_NAMESPACE }}"
+        echo "  CONTAINER_REGISTRY:           {{ .CONTAINER_REGISTRY }}"
+        echo "  CONTAINER_IMAGE:              {{ .CONTAINER_IMAGE }}"
+        echo "  DATE:                         {{ .DATE }}"
+        echo "  DESCRIPTION:                  {{ .DESCRIPTION }}"
+        echo "  DIST_PATH:                    {{ .DIST_PATH }}"
+        echo "  DIST:                         {{ .DIST }}"
+        echo "  COVER:                        {{ .COVER }}"
+        echo "  FIXED_ROOT:                   {{ .FIXED_ROOT }}"
+        echo "  GIT_BRANCH:                   {{ .GIT_BRANCH }}"
+        echo "  GIT_COMMIT:                   {{ .GIT_COMMIT }}"
+        echo "  GIT_EVENT:                    {{ .GIT_EVENT }}"
+        echo "  GIT_REF:                      {{ .GIT_REF }}"
+        echo "  GIT_SHA:                      {{ .GIT_SHA }}"
+        echo "  GIT_URL:                      {{ .GIT_URL }}"
+        echo "  GO_VERSION:                   {{ .GO_VERSION }}"
+        echo "  GOARCH:                       {{ .GOARCH }}"
+        echo "  GOOS:                         {{ .GOOS }}"
+        echo "  GOTOOLCHAIN:                  {{ .GOTOOLCHAIN }}"
+        echo "  IS_SHALLOW:                   {{ .IS_SHALLOW }}"
+        echo "  NAME:                         {{ .NAME }}"
+        echo "  LDFLAGS:                      {{ .LDFLAGS }}"
+        echo "  OUTPUT_FILE:                  {{ .OUTPUT_FILE }}"
+        echo "------------------------------------------------------------"
+
+  git-unshallow-clone:
+    desc: Checks if the repository is shallow and unshallow if needed
+    run: once
+    cmds:
+      - |
+        if [ "{{ .IS_SHALLOW }}" = "true" ]; then
+          echo "Repository is shallow. Attempting to unshallow..."
+          git fetch --unshallow
+        else
+          echo "Repository is not shallow. No action needed."
+        fi
+    silent: true
+    requires:
+      vars: [IS_SHALLOW]
+
+  mod:
+    desc: Downloads and tidy Go modules (only if needed)
+    silent: true
+    sources:
+      - go.mod
+      - go.sum
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  mod:update:
+    desc: upgrade all direct and indirect dependencies
+    silent: true
+    sources:
+      - go.mod
+      - go.sum
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+      ## Before updating, you can see which dependencies have
+      ## newer versions available using
+      #- go list -m -u all
+
+  format:
+    desc: "Auto-format Go code (goimports + gofumpt) and markdown files (markdownlint-cli2), and tidy modules"
+    deps: [install-tools]
+    silent: true
+    sources:
+      - "**/*.go"
+      - "**/*.md"
+      - go.mod
+      - go.sum
+      - .markdownlint-cli2.jsonc
+    generates:
+      - ".task/format.stamp"
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+
+        # Setup fnm environment for Node.js tools
+        # Check common fnm locations and add to PATH
+        for fnm_bin in "$HOME/bin" "$HOME/.local/bin" "$HOME/.fnm"; do
+          if [ -x "$fnm_bin/fnm" ]; then
+            export PATH="$fnm_bin:$PATH"
+            break
+          fi
+        done
+
+        ## Initialize fnm if available
+        #if command -v fnm >/dev/null 2>&1; then
+        #  eval "$(fnm env --shell bash 2>/dev/null)" || true
+        #fi
+
+        # Format Go files
+        find . -type f -name '*.go' \
+          -not -path './.cache/*' \
+          -not -path './.task/*' \
+          -not -path './.gocache/*' \
+          -print0 \
+          | xargs -0 goimports -w
+
+        echo ""
+
+        find . \
+          -type d \( -name .gocache -o -name .cache -o -name .task \) -prune -false \
+          -o -type f -name '*.go' -print \
+          | xargs gofumpt -w -extra
+
+        echo ""
+
+        npx --yes markdownlint-cli2 "**/*.md" "#node_modules" --fix
+
+        echo ""
+
+        # Format with prettier using npx
+        find . -type f \
+          -not -path './.github/*' \
+          -not -path './.gocache/*' \
+          -not -path './.cache/*' \
+          -not -path './.task/*' \
+          -not -path './refs/*' \
+          -not -path './.git/*' \
+          -not -path './node_modules/*' \
+          -not -path './dist/*' \
+          -not -path './build/*' \
+          \( -name '*.yaml' -o -name '*.yml' -o -name '*.md' -o -name '*.json' -o -name '*.jsonc' \) \
+          -print0 \
+          | xargs -0 npx --yes prettier --write
+
+        echo ""
+        go mod tidy
+
+        mkdir -p .task
+        touch .task/format.stamp
+
+  format:check:
+    desc: "Check if code and markdown files are properly formatted (fails if formatting is needed)"
+    deps: [install-tools]
+    silent: true
+    sources:
+      - "**/*.go"
+      - "**/*.md"
+      - .markdownlint.yaml
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+
+        # Setup fnm environment for Node.js tools
+        # Check common fnm locations and add to PATH
+        for fnm_bin in "$HOME/bin" "$HOME/.local/bin" "$HOME/.fnm"; do
+          if [ -x "$fnm_bin/fnm" ]; then
+            export PATH="$fnm_bin:$PATH"
+            break
+          fi
+        done
+
+        ## Initialize fnm if available
+        #if command -v fnm >/dev/null 2>&1; then
+        #  eval "$(fnm env --shell bash 2>/dev/null)" || true
+        #fi
+
+        changes=0
+
+        find . \
+          -type d \( -name .gocache -o -name .cache -o -name .task \) -prune -false \
+          -o -type f -name '*.go' -print0 \
+          | xargs -0 goimports -l || {
+            echo "Go formatting issues."
+            changes=1
+        }
+
+        find . \
+          -type d \( -name .gocache -o -name .cache -o -name .task \) -prune -false \
+          -o -type f -name '*.go' -print0 \
+          | xargs -0 gofumpt -l -extra || {
+            echo "Go formatting issues."
+            changes=1
+        }
+
+        npx --yes markdownlint-cli2 "**/*.md" "#node_modules" || {
+          echo "Markdown formatting issues found"
+          changes=1
+        }
+
+        if command -v npx >/dev/null 2>&1; then
+          find . \
+            -type d \( -name .gocache -o -name .cache -o -name .task -o -name .github -o -name refs -o -name .git -o -name node_modules -o -name dist -o -name build \) -prune -false \
+            -o -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.md' -o -name '*.json' -o -name '*.jsonc' \) -print0 \
+            | xargs -0 npx --yes prettier --no-error-on-unmatched-pattern --ignore-unknown --check || {
+            echo "Prettier formatting issues found"
+            changes=1
+          }
+        else
+          echo "⚠️  npx not found - skipping prettier"
+          changes=1
+        fi
+
+        if [ "$changes" -ne 0 ]; then
+          echo "Run 'task format' to apply formatting."
+          exit 1
+        fi
+        echo "✅ Code formatting is correct"
+
+  lint:
+    desc: Runs golangci-lint (fails if any linting issues are found)
+    aliases: [l]
+    silent: true
+    deps: [install-tools]
+    sources:
+      - "./**/*.go"
+      - .golangci.yml
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+
+        echo "Running golangci-lint..."
+        mkdir -p "{{.GOLANGCI_LINT_CACHE}}"
+        golangci-lint run ./... --config .golangci.yml --timeout 10m0s
+        echo "✅ No linting issues found"
+
+  vet:
+    desc: "Run go vet (static checks from the Go toolchain)"
+    silent: true
+    sources:
+      - "./**/*.go"
+      - go.mod
+      - go.sum
+    cmds:
+      - go vet ./...
+
+  lint:fix:
+    desc: Runs golangci-lint and fixes any issues
+    deps: [install-tools]
+    silent: true
+    sources:
+      - "./**/*.go"
+      - .golangci.yml
+    cmds:
+      - |
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        mkdir -p "{{.GOLANGCI_LINT_CACHE}}"
+        golangci-lint run --fix
+
+  install-tools:
+    desc: "Install all development tools (Go)"
+    silent: true
+    deps: [install-tools:go]
+    cmds:
+      - echo "✅ All development tools installed"
+
+  install-tools:aqua:
+    desc: "Install tools defined in aqua.yaml using Aqua package manager"
+    silent: true
+    run: once
+    env:
+      AQUA_ROOT_DIR: "{{.ROOT_DIR}}/aqua"
+      AQUA_CONFIG: "{{.ROOT_DIR}}/aqua.yaml"
+      AQUA_POLICY_CONFIG: "{{.ROOT_DIR}}/aqua-policy.yaml"
+      AQUA_DISABLE_POLICY: "false"
+    status:
+      - test -d "{{.ROOT_DIR}}/aqua"
+      - test -f "{{.TOOLS_BIN}}/aqua"
+    cmds:
+      - |
+        set -e
+        echo "📦 Installing tools via Aqua..."
+
+        # Check if aqua is installed
+        if ! command -v aqua >/dev/null 2>&1; then
+          echo "⚠️  Aqua not found. Installing..."
+          #curl -sSfL https://raw.githubusercontent.com/aquaproj/aqua-installer/v4.1.0/aqua-installer | bash -s -- -v v2.50.0
+          #export PATH="${AQUA_ROOT_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/aquaproj-aqua}/bin:$PATH"
+          exit 1
+        fi
+
+        # Install tools from aqua.yaml
+        aqua cp -o "{{.ROOT_DIR}}/.tool"
+
+  install-tools:go:
+    desc: "Install Go tooling dependencies (linters, generators)"
+    silent: true
+    run: once
+    env:
+      GOBIN: "{{.TOOLS_BIN}}"
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+
+        mkdir -p "{{.TOOLS_BIN}}"
+
+        install_tool() {
+          local name="$1"
+          local pkg="$2"
+
+          if ! command -v "$name" >/dev/null 2>&1; then
+            echo "[install] $name"
+            go install "$pkg"
+          fi
+        }
+
+        install_tool golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}"
+        install_tool benchstat "golang.org/x/perf/cmd/benchstat@latest"
+        install_tool govulncheck "golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}"
+        install_tool gofumpt "mvdan.cc/gofumpt@{{.GOFUMPT_VERSION}}"
+        install_tool goimports "golang.org/x/tools/cmd/goimports@{{.GOIMPORTS_VERSION}}"
+        install_tool go-test-coverage "github.com/vladopajic/go-test-coverage/v2@{{.GOTESTCOVERAGE_VERSION}}"
+        install_tool fake-gcs-server "github.com/fsouza/fake-gcs-server@latest"
+
+  build:
+    deps: [mod, git-unshallow-clone]
+    desc: "Build the CLI"
+    silent: true
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.DIST}}/{{.OUTPUT_FILE}}"
+    cmds:
+      - mkdir -p {{.DIST}}
+      - >
+        GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build
+        -ldflags '-s -w {{.LDFLAGS}}'
+        -trimpath
+        -o {{.DIST}}/{{.OUTPUT_FILE}} {{.MAIN_PACKAGE}}
+
+  build-container-image:
+    deps: [mod, git-unshallow-clone]
+    desc: "Build the container image"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    exclude:
+      - "**/*_test.go"
+      - .task/build-args.txt # captures vars that should bust cache (see first cmd)
+    vars:
+      CGO_ENABLED: "0"
+      GOOS: "linux"
+      GOARCH: "amd64"
+    generates:
+      - "{{.DIST}}/{{.OUTPUT_FILE}}.tar"
+      - "{{.DIST}}/tag.txt"
+    cmds:
+      - mkdir -p {{.DIST}}/usr/local/bin
+      - >
+        GOOS={{.GOOS}} GOARCH={{.GOARCH}} go build
+        -ldflags '-s -w {{.LDFLAGS}}' -trimpath
+        -o {{.DIST}}/usr/local/bin/{{.OUTPUT_FILE}}
+        {{.MAIN_PACKAGE}}
+      - cd {{.DIST}}
+      - |
+        {{ if eq OS `windows` }}
+          ## tar --owner=0 --group=0 --mode=0775 -C {{.DIST}}/ -cvf {{.DIST}}/{{.OUTPUT_FILE}}.tar usr/local/bin --force-local
+          tar -c -v -f "{{.DIST}}/{{.OUTPUT_FILE}}.tar"
+        {{ else }}#
+          tar --owner=0 --group=0 --mode=0775 -C {{.DIST}}/ -cvf {{.DIST}}/{{.OUTPUT_FILE}}.tar usr/local/bin
+        {{ end }}#
+        echo "{{.BUILD_TAG }}" > {{.DIST}}/tag.txt
+
+  push-container-image:
+    desc: "Push container image"
+    deps: [build-container-image]
+    sources:
+      - "{{.DIST}}/{{.OUTPUT_FILE}}.tar"
+      - "{{.DIST}}/tag.txt"
+    cmds:
+      - >
+        crane mutate
+        --append {{.DIST}}/{{.NAME}}.tar {{.BASE_CONTAINER_IMAGE}}
+        --label org.opencontainers.image.version="{{.BUILD_TAG}}"
+        --label org.opencontainers.image.title="{{.NAME}}"
+        --label org.opencontainers.image.description="{{.DESCRIPTION}}"
+        --label org.opencontainers.image.url="https://{{ .CONTAINER_IMAGE }}"
+        --label org.opencontainers.image.documentation="{{.GIT_URL}}"
+        --label org.opencontainers.image.source="{{.GIT_URL}}"
+        --label org.opencontainers.image.revision="{{.BUILD_VERSION}}"
+        --label org.opencontainers.image.created="{{.BUILD_DATE}}"
+        --label quay.expires-after="180d"
+        --env HOME=/home/default
+        --workdir /home/default
+        --entrypoint /usr/local/bin/{{.NAME}}
+        --user 1001
+        --tag {{.CONTAINER_IMAGE}}:{{.BUILD_TAG}}
+
+        IMAGE_URL_WITH_TAG="{{.CONTAINER_IMAGE}}:{{.BUILD_TAG }}"
+        IMAGE_DIGEST=$(crane digest "${IMAGE_URL_WITH_TAG}" || echo "")
+
+        echo "---"
+        echo "Image URL: ${IMAGE_URL_WITH_TAG}"
+        echo "Image Digest: ${IMAGE_DIGEST}"
+        echo "---"
+
+        if [ ${CI} ]; then
+          echo "Writing results directly to Tekton paths..."
+          echo -n "${IMAGE_URL_WITH_TAG}" > /tekton/results/IMAGE_URL
+          echo -n "${IMAGE_DIGEST}" > /tekton/results/IMAGE_DIGEST
+          echo "Successfully wrote results for Tekton."
+        fi
+
+  certs:
+    desc: "Generate TLS certificates for local development using mkcert"
+    cmds:
+      - >
+        mkdir -p .tls
+
+        {{.TOOLS_BIN}}/mkcert
+          -cert-file .tls/localhost.pem
+          -key-file .tls/localhost-key.pem
+          'localhost 127.0.0.1 ::1'
+    status:
+      - test -f .tls/localhost.pem
+      - test -f .tls/localhost-key.pem
+    generates:
+      - .tls/localhost.pem
+      - .tls/localhost-key.pem
+    preconditions:
+      - sh: test -x {{.TOOLS_BIN}}/mkcert
+        msg: "mkcert not found. Run 'aqua install' to install it."
+
+  dev:local:
+    desc: "Run locally with fake-gcs-server (no GCP credentials needed)"
+    deps: [build]
+    silent: true
+    env:
+      GCS_PORT: '{{ .GCS_PORT | default "4443" }}'
+      CADDY_PORT: '{{ .CADDY_PORT | default "8080" }}'
+      DATA_DIR: '{{ .DATA_DIR | default "test-data/static" }}'
+      CADDY_BIN: "{{.DIST}}/{{.OUTPUT_FILE}}"
+      CADDY_CONFIG: "Caddyfile.dev"
+    cmds:
+      - bash scripts/dev-local.sh
+
+  dev:emulator:
+    desc: "Start only the fake-gcs-server emulator (for use with a separate Caddy instance)"
+    silent: true
+    env:
+      GCS_PORT: '{{ .GCS_PORT | default "4443" }}'
+      DATA_DIR: '{{ .DATA_DIR | default "test-data/static" }}'
+    cmds:
+      - bash scripts/dev-emulator.sh
+
+  e2e:build-site:
+    desc: "Build the Docsy Hugo site for e2e testing"
+    silent: true
+    env:
+      BUCKET: '{{ .BUCKET | default "e2e-docsy-bucket" }}'
+      BASE_URL: '{{ .BASE_URL | default "http://localhost:8080/" }}'
+    sources:
+      - "e2e/docsy-site/content/**"
+      - "e2e/docsy-site/hugo.yaml"
+      - "e2e/docsy-site/go.mod"
+    generates:
+      - "e2e/site-content/index.html"
+    cmds:
+      - bash e2e/build-site.sh
+
+  e2e:serve:
+    desc: "Run e2e environment: Docsy site via fake-gcs-server + Caddy"
+    deps: [build, e2e:build-site]
+    silent: true
+    env:
+      GCS_PORT: '{{ .GCS_PORT | default "4443" }}'
+      CADDY_PORT: '{{ .CADDY_PORT | default "8080" }}'
+      BUCKET: '{{ .BUCKET | default "e2e-docsy-bucket" }}'
+      CADDY_BIN: "{{.DIST}}/{{.OUTPUT_FILE}}"
+    cmds:
+      - bash e2e/serve.sh
+
+  e2e:smoke:
+    desc: "Run e2e smoke tests against a running e2e server"
+    silent: true
+    env:
+      BASE_URL: '{{ .BASE_URL | default "http://localhost:8080" }}'
+    cmds:
+      - bash e2e/smoke.sh
+
+  e2e:test:
+    desc: "Build, start servers, run smoke tests, and shut down (all-in-one)"
+    deps: [build, e2e:build-site]
+    silent: true
+    env:
+      GCS_PORT: '{{ .GCS_PORT | default "4443" }}'
+      CADDY_PORT: '{{ .CADDY_PORT | default "8080" }}'
+      BUCKET: '{{ .BUCKET | default "e2e-docsy-bucket" }}'
+      CADDY_BIN: "{{.DIST}}/{{.OUTPUT_FILE}}"
+    cmds:
+      - bash e2e/test.sh
+
+  test:
+    desc: Runs test suite
+    aliases: [t]
+    env:
+      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+    cmds:
+      - go test $GOTESTFLAGS -timeout 10m ./...
+      #- go test $GOTESTFLAGS -short ./...
+      #- go test $GOTESTFLAGS -race -timeout 10m ./...
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:
+    desc: "Generate test coverage profile"
+    silent: true
+    deps:
+      - install-tools
+    cmds:
+      - mkdir -p {{.COVER}}
+      - go test ./... -coverprofile={{.COVER}}/cover.out -covermode=atomic
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:report:
+    desc: "Per-package coverage summary"
+    silent: true
+    deps:
+      - coverage
+    cmds:
+      - go tool cover -func={{.COVER}}/cover.out
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:check:
+    desc: "Check if test coverage meets minimum threshold (configured in .testcoverage.yml)"
+    deps:
+      - install-tools
+      - coverage
+    silent: true
+    env:
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    cmds:
+      - |
+        set -e
+        go-test-coverage --config .testcoverage.yml
+    sources:
+      - "{{.COVER}}/cover.out"
+      - ".testcoverage.yml"
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:baseline:
+    desc: "Generate coverage profile and save as baseline (cover/baseline.txt)"
+    deps:
+      - install-tools
+      - coverage
+    env:
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    generates:
+      - "{{.COVER}}/baseline.txt"
+    cmds:
+      - |
+        set -e
+        # Generate baseline without diffing against itself.
+        # --diff-base-breakdown-file-name "" disables the diff comparison
+        # while still writing the breakdown file via breakdown-file-name in config.
+        go-test-coverage --config .testcoverage.yml --diff-base-breakdown-file-name ""
+        echo "✅ Baseline saved to {{.COVER}}/baseline.txt"
+    sources:
+      - "{{.COVER}}/cover.out"
+      - ".testcoverage.yml"
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:compare:
+    desc: "Compare current coverage profile against saved baseline"
+    deps:
+      - install-tools
+      - coverage
+    env:
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    cmds:
+      - |
+        set -e
+        if [ ! -f "{{.COVER}}/baseline.txt" ]; then
+          echo "⚠️  Baseline not found at {{.COVER}}/baseline.txt"
+          echo "   Run 'task coverage:baseline' to create one"
+          exit 1
+        fi
+        # go-test-coverage compares via diff.base-breakdown-file-name in config
+        go-test-coverage --config .testcoverage.yml
+    sources:
+      - "{{.COVER}}/cover.out"
+      - "cover/baseline.txt"
+      - ".testcoverage.yml"
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:html:
+    desc: "Generate HTML coverage report (requires cover.out to exist)"
+    silent: true
+    cmds:
+      - go tool cover -html={{.COVER}}/cover.out -o {{.COVER}}/coverage.html
+    generates:
+      - "{{.COVER}}/coverage.html"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  coverage:diff:
+    desc: "Show coverage changes compared to baseline (alias for coverage:compare)"
+    deps:
+      - install-tools
+      - coverage
+    silent: true
+    env:
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    vars:
+      BASELINE_FILE: '{{ .BASELINE_FILE | default "cover/baseline.txt" }}'
+    cmds:
+      - |
+        set -e
+        if [ ! -f "{{.BASELINE_FILE}}" ]; then
+          echo "⚠️  Baseline not found at {{.BASELINE_FILE}}"
+          echo "   Run 'task coverage:baseline' to create one"
+          exit 1
+        fi
+        echo "📊 Coverage diff against baseline:"
+        go-test-coverage --config .testcoverage.yml
+    sources:
+      - "{{.COVER}}/cover.out"
+      - "{{.BASELINE_FILE}}"
+      - ".testcoverage.yml"
+
+  mod:check:
+    desc: "Check if go.mod and go.sum are in sync (fails if go mod tidy is needed)"
+    silent: true
+    cmds:
+      - task: mod:tidy:check
+
+  mod:tidy:check:
+    desc: "Ensure go.mod and go.sum are tidy without modifying the working tree"
+    silent: true
+    cmds:
+      - |
+        set -e
+        # Save current state
+        cp go.mod go.mod.bak
+        cp go.sum go.sum.bak
+
+        # Run tidy
+        go mod tidy > /dev/null 2>&1
+
+        # Compare against saved state (not git HEAD)
+        if diff -q go.mod go.mod.bak > /dev/null 2>&1 && diff -q go.sum go.sum.bak > /dev/null 2>&1; then
+          echo "✅ go.mod and go.sum are tidy"
+          rm -f go.mod.bak go.sum.bak
+          exit 0
+        fi
+
+        # Restore original state and report
+        mv go.mod.bak go.mod
+        mv go.sum.bak go.sum
+        echo "❌ go.mod and go.sum need tidying"
+        echo "Run 'task mod' or 'go mod tidy' to fix."
+        exit 1
+
+  mod:verify:
+    desc: "Verify Go module integrity and checksums"
+    cmds:
+      - go mod verify
+      - go mod download
+
+  ## govulncheck pulls data from the Go vulnerability DB via the module proxy,
+  ## can be slow/flaky in restricted networks, and isn’t always desired on
+  ## every push. Hnce it is not called in task ci.
+  vulncheck:
+    desc: "Check for known vulnerabilities in dependencies (requires Go 1.18+)"
+    silent: true
+    deps:
+      - install-tools
+    cmds:
+      - |
+        export PATH="{{.TOOLS_BIN}}:$PATH"
+        # Exit codes: 0=clean, 3=vulnerabilities found (may be unfixable upstream).
+        # Treat exit-3 as a warning so the scan still succeeds when all known
+        # vulns are in dependencies with no available fix (e.g. GO-2023-1901
+        # in github.com/tektoncd/pipeline).
+        # -show verbose prints the full call stacks and affected packages/modules.
+        govulncheck -show verbose ./... || rc=$?
+        if [ "${rc:-0}" -eq 3 ]; then
+          echo ""
+          echo "⚠️  Known vulnerabilities found (see above). Review and track upstream fixes."
+        elif [ "${rc:-0}" -ne 0 ]; then
+          exit "$rc"
+        fi
+        touch .task/vulncheck.stamp
+    generates:
+      - ".task/vulncheck.stamp"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+
+  security:scan:
+    desc: "Comprehensive security scan (gosec + govulncheck + mod verify)"
+    silent: true
+    deps:
+      - install-tools
+    cmds:
+      - |
+        set -e
+        echo "🔒 Running comprehensive security scan..."
+
+        echo ""
+        echo "✅ Step 1/3: Module Verification"
+        echo "   - Verifying module checksums..."
+        task mod:verify
+
+        echo ""
+        echo "✅ Step 2/3: Vulnerability Check"
+        echo "   - Scanning for known vulnerabilities..."
+        task vulncheck
+
+        echo ""
+        echo "✅ Step 3/3: Static Security Analysis"
+        echo "   - Running gosec (if available)..."
+
+        if command -v gosec >/dev/null 2>&1; then
+          gosec -quiet ./...
+          echo "   ✅ gosec completed"
+        else
+          echo "   ⚠️  gosec not found - skipping (install: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest)"
+        fi
+
+        echo ""
+        echo "=========================================="
+        echo "✅ Security Scan Completed!"
+        echo "=========================================="
+
+  test:cover:
+    desc: "Run unit tests with coverage profile"
+    silent: true
+    env:
+      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+    cmds:
+      - mkdir -p {{.COVER}}
+      - go test $GOTESTFLAGS ./... -coverprofile={{.COVER}}/cover.out
+
+  release:
+    desc: "Release the product"
+    deps: [git-unshallow-clone]
+    cmds:
+      - |
+        echo "Releasing Product..."
+        if [ -n "$GPG_FINGERPRINT" ]; then
+          goreleaser release --clean
+        else
+          goreleaser release --clean --skip sign
+        fi
+    silent: true
+
+  tag:
+    desc: "Create a signed annotated Git tag at a given commit SHA (requires approved release-proposal PR)"
+    vars:
+      TAG: '{{.TAG | default ""}}'
+      SHA: '{{.SHA | default ""}}'
+      ## set to "true" to echo commands only
+      DRYRUN: '{{.DRYRUN | default "false"}}'
+      ## SemVer (v prefix optional): 1.2.3, v1.2.3, 1.2.3-rc.1, 1.2.3+build.5, etc.
+      SEMVER_RE: '^(v)?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+    preconditions:
+      # required params
+      - sh: 'test -n "{{.TAG}}"'
+        msg: "TAG is required (e.g. task tag TAG=v1.2.3 SHA=<commit>)"
+      - sh: 'test -n "{{.SHA}}"'
+        msg: "SHA is required (e.g. task tag TAG=v1.2.3 SHA=<commit>)"
+      # semver validation (no grep): use Task templating regexMatch -> 'true'/'false'
+      - sh: 'test "{{regexMatch .SEMVER_RE .TAG}}" = "true"'
+        msg: "TAG must be a valid semantic version (examples: 1.2.3, v1.2.3, 1.2.3-rc.1)"
+      # git repo + clean state (no unstaged, no staged)
+      - sh: "git rev-parse --is-inside-work-tree >/dev/null 2>&1"
+        msg: "Not inside a git repository."
+      - sh: "git diff --quiet"
+        msg: "Working directory must be clean (unstaged changes found)."
+      - sh: "git diff --cached --quiet"
+        msg: "No staged changes allowed (index has staged changes)."
+      # commit exists and is a commit object
+      - sh: 'git cat-file -e "{{.SHA}}^{commit}"'
+        msg: "SHA does not exist or is not a commit."
+      # ensure local tag doesn't already exist
+      - sh: '! git show-ref --tags --verify --quiet "refs/tags/{{.TAG}}"'
+        msg: "Tag already exists locally."
+      # ensure remote tag doesn't already exist on origin (portable: no grep)
+      - sh: 'test -z "$(git ls-remote --tags origin "refs/tags/{{.TAG}}")"'
+        msg: "Tag already exists on origin."
+      ## policy: only tag on main
+      - sh: 'test "$(git rev-parse --abbrev-ref HEAD)" = "main"'
+        msg: "Tagging is only allowed from branch 'main'."
+      # policy: SHA must be reachable from main
+      - sh: 'git merge-base --is-ancestor "{{.SHA}}" "main"'
+        msg: "SHA must be reachable from main (not an ancestor of main)."
+      # validate signing configuration for SSH signing (GitHub-doc-aligned config)
+      - sh: 'test "$(git config --global --get gpg.format)" = "ssh"'
+        msg: "Git is not configured for SSH signing: set `git config --global gpg.format ssh`."
+      - sh: 'test -n "$(git config --global --get user.signingkey)"'
+        msg: "Git signing key not set: `git config --global user.signingkey /path/to/key.pub`."
+      - sh: 'test "$(git config --global --bool --get tag.gpgSign)" = "true"'
+        msg: "Tags are not set to be signed by default: `git config --global tag.gpgSign true`."
+      ## Also require commit signing (uncomment if you want it enforced)
+      #- sh: 'test "$(git config --global --bool --get commit.gpgSign)" = "true"'
+      #  msg: 'Commits are not set to be signed by default: `git config --global commit.gpgSign true`.'
+      ## git-cliff requirements
+      #- sh: 'command -v git-cliff >/dev/null 2>&1'
+      #  msg: "git-cliff is required on PATH."
+      #- sh: 'test -f cliff.toml'
+      #  msg: "cliff.toml is required (git-cliff config)."
+    cmds:
+      - |
+        if [ "{{.DRYRUN}}" = "true" ]; then
+          echo git tag -s "{{.TAG}}" "{{.SHA}}" -m "Release {{.TAG}}"
+          echo git tag -v "{{.TAG}}"
+          echo git push origin "{{.TAG}}"
+        else
+          git tag -s "{{.TAG}}" "{{.SHA}}" -m "Release {{.TAG}}"
+          git tag -v "{{.TAG}}"
+          git push origin "{{.TAG}}"
+          ## git cliff --config cliff.toml --tag "{{.TAG}}" --output "{{.NOTES_DIR}}/{{.TAG}}.md"
+          echo "Tagged and pushed '{{.TAG}}' successfully."
+        fi
+
+  act:
+    desc: "Run GitHub Actions workflows locally using act + Podman"
+    vars:
+      WORKFLOW: '{{ .WORKFLOW | default ".github/workflows/test.yml" }}'
+      EVENT: '{{ .EVENT | default "push" }}'
+      JOB: '{{ .JOB | default "" }}'
+      DRYRUN: '{{ .DRYRUN | default "false" }}'
+    env:
+      DOCKER_HOST:
+        sh: echo "unix://$(podman machine inspect --format '{{`{{.ConnectionInfo.PodmanSocket.Path}}`}}')"
+    preconditions:
+      - sh: command -v act >/dev/null 2>&1
+        msg: "act is not installed. Run 'aqua install' to install it."
+      - sh: command -v podman >/dev/null 2>&1
+        msg: "podman is not installed."
+      - sh: podman machine inspect --format '{{`{{.State}}`}}' 2>/dev/null | grep -qi running
+        msg: "Podman machine is not running. Start it with 'podman machine start'."
+    cmds:
+      - |
+        ARGS="{{.EVENT}} -W {{.WORKFLOW}}"
+        {{ if .JOB }}ARGS="$ARGS -j {{.JOB}}"{{ end }}
+        {{ if eq .DRYRUN "true" }}ARGS="$ARGS -n"{{ end }}
+        act $ARGS
+
+  ci:
+    desc: "Comprehensive CI pipeline task - runs all checks, tests, linting, coverage, and build (standard for CI/CD)"
+    vars:
+      COVERAGE_BASELINE_CHECK: '{{ .COVERAGE_BASELINE_CHECK | default "false" }}'
+    silent: true
+    cmds:
+      - |
+        set -e
+
+        echo "=========================================="
+        echo "🚀 Starting CI Pipeline${RACE_MSG}"
+        echo "=========================================="
+        echo ""
+        echo "✅ Step 1/8: Module Dependencies Check"
+        echo "   - Checking go.mod and go.sum are in sync..."
+        task mod:check
+
+        echo ""
+        echo "✅ Step 2/8: Module Verification"
+        echo "   - Verifying module integrity and checksums..."
+        task mod:verify
+
+        echo ""
+        echo "✅ Step 3/8: Code Formatting Check"
+        echo "   - Checking code formatting (goimports + gofumpt)..."
+        task format:check
+
+        echo ""
+        echo "✅ Step 4/8: Go Vet"
+        echo "   - Running go vet..."
+        task vet
+
+        echo ""
+        echo "✅ Step 5/8: Linting"
+        echo "   - Running golangci-lint (will fail if issues found)..."
+        task lint
+
+        echo ""
+        echo "✅ Step 6/8: Tests"
+        echo "   - Running test suite..."
+        task test
+
+        echo ""
+        echo "✅ Step 7/8: Test Coverage Check"
+        echo "   - Checking test coverage ..."
+        task coverage:report
+
+        echo ""
+        echo "   - Checking test coverage (thresholds configured in .testcoverage.yml)..."
+        task coverage:check
+
+        # Optional: Coverage baseline comparison (useful for PR checks)
+        if [ "{{.COVERAGE_BASELINE_CHECK}}" = "true" ] && [ -f "cover/baseline.txt" ]; then
+          echo ""
+          echo "   - Comparing coverage against baseline..."
+          task coverage:compare || echo "⚠️  Coverage comparison failed (baseline may be outdated)"
+        fi
+
+        echo ""
+        echo "✅ Step 8/8: Build"
+        echo "   - Building binaries..."
+        task build
+
+        echo ""
+        echo "=========================================="
+        echo "✅ CI Pipeline Completed Successfully!"
+        echo "=========================================="
+        echo ""
+        echo "All checks passed! Ready for CI/CD pipeline."
+
+        echo ""
+        echo "💡 Optional: Run 'task vulncheck' to check for vulnerabilities"
+
+        if [ "{{.COVERAGE_BASELINE_CHECK}}" != "true" ]; then
+          echo "💡 Optional: Run 'COVERAGE_BASELINE_CHECK=true task ci' to compare against baseline"
+        fi

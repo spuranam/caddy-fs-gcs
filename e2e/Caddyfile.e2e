@@ -1,0 +1,199 @@
+# =============================================================================
+# E2E Test Caddyfile — Docsy static site via fake-gcs-server
+# =============================================================================
+#
+# Serves the Hugo-generated Docsy site through caddy-fs-gcs, backed by
+# fake-gcs-server. Exercises the full plugin feature set against a realistic
+# documentation site (HTML, CSS, JS, images, fonts, XML sitemaps).
+#
+# Usage:
+#   task e2e:serve        # build site + start emulator + Caddy
+#   task e2e:build-site   # just rebuild the Hugo site
+#
+# Then open http://localhost:8080/ in your browser.
+# =============================================================================
+{
+	# Disable admin API (not needed locally)
+	admin off
+
+	# Disable automatic HTTPS for local dev
+	auto_https off
+
+	# Named GCS filesystem — used by file_server below
+	filesystem e2e-fs gcs {
+		bucket_name e2e-docsy-bucket
+		cache_ttl 5m
+		cache_max_entries 10000
+	}
+
+	# Branded error pages embedded in the plugin binary
+	filesystem error-pages error_pages
+
+	# -------------------------------------------------------------------------
+	# Event subscriptions (optional) — react to GCS backend events
+	# -------------------------------------------------------------------------
+	# The gcs filesystem emits gcs.object_not_found and gcs.backend_error
+	# events via caddyevents. Enable to log or alert on GCS errors.
+	#
+	# events {
+	#     on gcs.backend_error exec /usr/local/bin/alert.sh {event.data.bucket} {event.data.error}
+	# }
+}
+
+:8080 {
+	# -------------------------------------------------------------------------
+	# Logging — verbose for development
+	# -------------------------------------------------------------------------
+	#log {
+	#	output stdout
+	#	format console
+	#	level DEBUG
+	#}
+
+	# Custom structured access logging with additional fields
+	# https://www.dash0.com/guides/logging-in-caddy
+	# https://www.dash0.com/guides/opentelemetry-environment-variables
+	# https://www.dash0.com/guides/opentelemetry-go-ebpf-instrumentation
+	# https://oneuptime.com/blog/post/2026-02-06-caddy-access-logs-otel-filelog/view
+	log {
+		output stdout
+		format append {
+			server_id "caddy-fs-gcs-e2e"
+			environment "development"
+			version "dev"
+			mode "local"
+			correlation_id {http.request.header.X-Correlation-ID}
+			request_id {http.request.header.X-Request-ID}
+			response_time {http.response.time}
+			user_agent {http.request.header.User-Agent}
+			remote_ip {http.request.remote}
+			wrap json
+		}
+		level INFO
+	}
+
+	# -------------------------------------------------------------------------
+	# Security headers
+	# -------------------------------------------------------------------------
+	header {
+		-Server
+		-Link
+		-X-Powered-By
+		# Disable Google FLOC tracking if not enabled explicitly: https://plausible.io/blog/google-floc
+		?Permissions-Policy interest-cohort=()
+		# disable clients from sniffing the media type
+		X-Content-Type-Options nosniff
+		# clickjacking protection
+		X-Frame-Options DENY
+		# keep referrer data off of HTTP connections
+		Referrer-Policy no-referrer-when-downgrade
+		# prevent loading cross-origin resources without explicit permission
+		Cross-Origin-Embedder-Policy require-corp
+		# isolate browsing context from cross-origin popups (Spectre mitigation)
+		Cross-Origin-Opener-Policy same-origin
+		# prevent other sites from embedding your resources (hotlink protection)
+		Cross-Origin-Resource-Policy same-origin
+		# prevent browsers from pre-resolving DNS for links in served pages
+		X-DNS-Prefetch-Control off
+		# XSS mitigation — restrict what resources the browser may load
+		# Adjust script-src/style-src if your pages use inline scripts or styles.
+		?Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'"
+		# HSTS — uncomment in production (requires HTTPS)
+		#?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Request-ID {http.request.header.X-Request-ID}
+		X-Response-Time {http.response.time}
+		# Tag responses so you know they came from the proxy
+		X-Served-By caddy-fs-gcs-e2e
+	}
+
+	# Enable correlation tracking through headers
+	header {
+		+X-Correlation-ID {http.request.header.X-Correlation-ID}
+		+X-Request-ID {http.request.header.X-Request-ID}
+	}
+
+	# -------------------------------------------------------------------------
+	# Observability — GCS request metrics (wraps all handlers)
+	# -------------------------------------------------------------------------
+	gcs_metrics
+
+	# -------------------------------------------------------------------------
+	# Health / readiness / liveness / startup endpoints
+	# -------------------------------------------------------------------------
+	gcs_health {
+		enable_detailed
+		enable_metrics
+	}
+
+	# -------------------------------------------------------------------------
+	# Prometheus metrics endpoint — /metrics
+	# -------------------------------------------------------------------------
+	prometheus {
+		enable_health
+	}
+
+	# -------------------------------------------------------------------------
+	# Serve the Docsy site from GCS via file_server + named filesystem
+	# -------------------------------------------------------------------------
+	# Compression — zstd preferred, gzip fallback
+	# zstd: fastest|default|better|best  gzip: 1-9 (1=fast, 9=best)
+	encode {
+		zstd better
+		gzip 6
+		minimum_length 256
+	}
+
+	# Cache headers
+	header Cache-Control "public, max-age=3600"
+
+	# Serve files from the GCS filesystem
+	file_server {
+		fs e2e-fs
+		index index.html
+		precompressed zstd gzip
+	}
+
+	# -------------------------------------------------------------------------
+	# Error handling — branded error pages
+	# -------------------------------------------------------------------------
+	# Embedded error pages from the plugin binary. To override with custom
+	# pages from the GCS bucket, upload /errors/404.html etc. and add a
+	# try_files / file matcher before the embedded fallback.
+	# -------------------------------------------------------------------------
+	handle_errors {
+		@404 expression {err.status_code} == 404
+		handle @404 {
+			rewrite * /404.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+
+		@403 expression {err.status_code} == 403
+		handle @403 {
+			rewrite * /403.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+
+		@5xx expression {err.status_code} >= 500
+		handle @5xx {
+			rewrite * /500.html
+			file_server {
+				fs error-pages
+			}
+		}
+
+		# Fallback — generic embedded error page
+		handle {
+			rewrite * /default.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+	}
+}

@@ -1,0 +1,35 @@
+################################################################################
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+################################################################################
+## export AQUA_ROOT_DIR=./aqua
+## export AQUA_FILE_PATH=$(pwd)
+## export AQUA_POLICY_CONFIG=${AQUA_FILE_PATH}/aqua-policy.yaml
+## export AQUA_CONFIG=${AQUA_FILE_PATH}/aqua.yaml
+## export AQUA_DISABLE_POLICY=false
+## export GITHUB_TOKEN=$(gh auth token --hostname github.com)
+################################################################################
+## AQUA_GENERATE_WITH_DETAIL=true aqua g
+## aqua update
+## aqua update-checksum -prune
+## aqua cp -o ./.tool
+################################################################################
+## fixed in https://github.com/aquaproj/aqua/releases/tag/v2.37.1
+## yq '.packages |= sort_by(.name | downcase)' ${AQUA_FILE_PATH}/aqua.yaml | sed '/^  - name:/i\\' | pbcopy
+################################################################################
+registries:
+  - type: standard
+    ref: v4.493.0 # renovate: depName=aquaproj/aqua-registry
+packages:
+  - name: crate-ci/typos@v1.45.1
+
+  - name: evilmartians/lefthook@v2.1.5
+
+  - name: FiloSottile/mkcert@v1.4.4
+
+  #- name: fsouza/fake-gcs-server@v1.52.3
+  - name: go-task/task@v3.50.0
+
+  - name: goreleaser/goreleaser@v2.15.3
+
+  - name: nektos/act@v0.2.87

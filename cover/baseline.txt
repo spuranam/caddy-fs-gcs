@@ -1,0 +1,15 @@
+pkg/gcs/errorpages/caddy_module.go;13;11
+pkg/gcs/fs/attrcache.go;105;95
+pkg/gcs/fs/gcsfs.go;197;148
+pkg/gcs/fs/module.go;160;136
+pkg/gcs/plugin.go;12;12
+pkg/observability/health/health.go;59;30
+pkg/observability/health/health_endpoint.go;194;176
+pkg/observability/logger/logger.go;68;65
+pkg/observability/logger/sanitize.go;13;12
+pkg/observability/metrics/metrics.go;149;130
+pkg/observability/metrics/prometheus_endpoint.go;98;79
+pkg/observability/tracing/tracing.go;86;82
+pkg/validation/config.go;184;160
+pkg/validation/validation_endpoint.go;164;142
+pkg/version.go;13;13

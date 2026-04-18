@@ -1,0 +1,73 @@
+# Custom
+**/local/*
+**/localdev/*
+**/temp/*
+.DS_Store
+refs/
+
+## Benchmarking
+bench/*.txt
+!bench/baseline.txt
+
+## Code Coverage
+cover/*
+!cover/baseline.txt
+
+# Go build cache (kept local to repo via Taskfile GOCACHE)
+.gocache/
+.cache/
+
+# SonarQube Scanner
+.scannerwork/
+
+# linters / prettier
+node_modules
+package-lock.json
+package.json
+
+# install dirs
+/.tmp
+/.tools
+/.tool
+/.task
+/bin
+
+# release locations
+/snapshot
+/dist
+CHANGELOG.md
+VERSION
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# aqua
+aqua
+aqua-checksums.json
+
+# TLS certificates
+.tls
+
+# Local E2E testing state (SA tokens, processed-IDs, DLQ)
+.local/
+
+# E2E — Hugo generated site content (rebuild with: task e2e:build-site)
+e2e/site-content/
+e2e/gcs-root/
+e2e/docsy-site/
+e2e/docsy-site/node_modules/
+e2e/docsy-site/resources/
+

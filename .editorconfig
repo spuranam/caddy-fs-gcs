@@ -1,0 +1,29 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# Declares that this is the top-level configuration
+root = true
+
+# Unix-style newlines with a newline ending to every file
+[*]
+end_of_line = lf
+charset = utf-8
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+insert_final_newline = true
+curly_bracket_next_line = false
+spaces_around_operators = true
+
+# Matches multiple files with brace expansion notation
+# Set default charset
+[*.{js,py,.yaml,.yml,.md}]
+indent_style = space
+indent_size = 2
+
+[Makefile]
+indent_style = space
+indent_size = 4
+
+[*.{bash,sh}]
+indent_style = space
+indent_size = 4

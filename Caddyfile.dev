@@ -1,0 +1,425 @@
+# =============================================================================
+# Local Development Caddyfile
+# =============================================================================
+#
+# Serves files from a local fake-gcs-server emulator backed by test-data/.
+# No GCP credentials needed — STORAGE_EMULATOR_HOST is set by `task dev:local`.
+#
+# Uses the caddy.fs.gcs filesystem module with Caddy's built-in file_server
+# and standard middleware — no monolithic gcs handler required.
+#
+# Usage:
+#   task dev:local                         # default: test-data/static on :8080
+#   task dev:local DATA_DIR=test-data/public CADDY_PORT=3000
+#
+# Then open http://localhost:8080/ in your browser.
+# =============================================================================
+{
+	# Disable admin API (not needed locally)
+	admin off
+
+	# Disable automatic HTTPS for local dev
+	auto_https off
+
+	# -------------------------------------------------------------------------
+	# GCS filesystem modules — one per bucket
+	# -------------------------------------------------------------------------
+	# Each filesystem block creates a named fs.FS backed by a GCS bucket.
+	# file_server then uses these via `fs <name>`.
+	# -------------------------------------------------------------------------
+	filesystem docs-fs gcs {
+		bucket_name docs-bucket
+		cache_ttl 5m
+		cache_max_entries 10000
+	}
+
+	filesystem assets-fs gcs {
+		bucket_name assets-bucket
+		# Assets change rarely — longer TTL
+		cache_ttl 15m
+	}
+
+	filesystem main-fs gcs {
+		bucket_name test-bucket
+		# Defaults: cache_ttl 5m, cache_max_entries 10000
+	}
+
+	# Example: service account impersonation (uncomment to use)
+	# filesystem impersonated-fs gcs {
+	#     bucket_name restricted-bucket
+	#     service_account reader@my-project.iam.gserviceaccount.com
+	# }
+
+	# Example: disable attribute cache (uncomment to use)
+	# filesystem uncached-fs gcs {
+	#     bucket_name my-bucket
+	#     cache_ttl 0
+	# }
+
+	# Branded error pages embedded in the plugin binary
+	filesystem error-pages error_pages
+
+	# -------------------------------------------------------------------------
+	# Event subscriptions (optional) — react to GCS backend events
+	# -------------------------------------------------------------------------
+	# The gcs filesystem emits events that Caddy's events app can subscribe
+	# to. Useful for alerting, debugging, or custom error handling.
+	#
+	# events {
+	#     on gcs.object_not_found exec /usr/local/bin/log-404.sh {event.data.bucket} {event.data.object}
+	#     on gcs.backend_error    exec /usr/local/bin/alert.sh {event.data.bucket} {event.data.error}
+	# }
+
+	# -------------------------------------------------------------------------
+	# OIDC provider — Entra ID with Workload Identity Federation
+	# -------------------------------------------------------------------------
+	# Uses a projected Kubernetes service account token instead of a
+	# client_secret (RFC 7523 JWT bearer assertion).  Requires a federated
+	# credential on the App Registration pointing to the cluster's OIDC
+	# issuer, namespace, and service account.
+	#
+	# The token_params block with {file.*} re-reads the projected token from
+	# disk on every code exchange, handling automatic rotation.
+	#
+	# For local dev without OIDC, comment out this block and the per-route
+	# `oidc` directives below.
+	# https://github.com/relvacode/caddy-oidc?tab=readme-ov-file#workload-identity-federation
+	# -------------------------------------------------------------------------
+	#oidc entra {
+	#	issuer https://login.microsoftonline.com/{env.AZURE_TENANT_ID}/v2.0
+	#	client_id {env.AZURE_CLIENT_ID}
+	#	token_params {
+	#		client_assertion_type urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+	#		client_assertion {file./var/run/secrets/openshift/serviceaccount/token}
+	#	}
+	#	scope openid email profile
+	#	authenticate cookie {
+	#		name caddy
+	#		secret {env.COOKIE_SECRET}
+	#	}
+	#}
+}
+
+:8080 {
+	# -------------------------------------------------------------------------
+	# Logging — verbose for development
+	# -------------------------------------------------------------------------
+	#log {
+	#	output stdout
+	#	format console
+	#	level DEBUG
+	#}
+
+	# Custom structured access logging with additional fields
+	# https://www.dash0.com/guides/logging-in-caddy
+	# https://www.dash0.com/guides/opentelemetry-environment-variables
+	# https://www.dash0.com/guides/opentelemetry-go-ebpf-instrumentation
+	# https://oneuptime.com/blog/post/2026-02-06-caddy-access-logs-otel-filelog/view
+	log {
+		output stdout
+		format append {
+			server_id "caddy-fs-gcs-dev"
+			environment "development"
+			version "dev"
+			mode "local"
+			correlation_id {http.request.header.X-Correlation-ID}
+			request_id {http.request.header.X-Request-ID}
+			response_time {http.response.time}
+			user_agent {http.request.header.User-Agent}
+			remote_ip {http.request.remote}
+			wrap json
+		}
+		level INFO
+	}
+
+	# -------------------------------------------------------------------------
+	# Security headers — good practice even in dev
+	# -------------------------------------------------------------------------
+	header {
+		-Server
+		-Link
+		-X-Powered-By
+		# Disable Google FLOC tracking if not enabled explicitly: https://plausible.io/blog/google-floc
+		?Permissions-Policy interest-cohort=()
+		# disable clients from sniffing the media type
+		X-Content-Type-Options nosniff
+		# clickjacking protection
+		X-Frame-Options DENY
+		# keep referrer data off of HTTP connections
+		Referrer-Policy no-referrer-when-downgrade
+		# prevent loading cross-origin resources without explicit permission
+		Cross-Origin-Embedder-Policy require-corp
+		# isolate browsing context from cross-origin popups (Spectre mitigation)
+		Cross-Origin-Opener-Policy same-origin
+		# prevent other sites from embedding your resources (hotlink protection)
+		Cross-Origin-Resource-Policy same-origin
+		# prevent browsers from pre-resolving DNS for links in served pages
+		X-DNS-Prefetch-Control off
+		# XSS mitigation — restrict what resources the browser may load
+		# Adjust script-src/style-src if your pages use inline scripts or styles.
+		?Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'"
+		# HSTS — uncomment in production (requires HTTPS)
+		#?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Request-ID {http.request.header.X-Request-ID}
+		X-Response-Time {http.response.time}
+		# Tag responses so you know they came from the proxy
+		X-Served-By caddy-fs-gcs-dev
+	}
+
+	# Enable correlation tracking through headers
+	header {
+		+X-Correlation-ID {http.request.header.X-Correlation-ID}
+		+X-Request-ID {http.request.header.X-Request-ID}
+	}
+
+	# -------------------------------------------------------------------------
+	# Observability — GCS request metrics (wraps all handlers)
+	# -------------------------------------------------------------------------
+	gcs_metrics
+
+	# -------------------------------------------------------------------------
+	# Health / readiness / liveness / startup endpoints
+	# -------------------------------------------------------------------------
+	# Returns JSON health status. Readiness checks GCS backend connectivity
+	# and startup gate. Kubernetes probes:
+	#   livenessProbe:  httpGet /live
+	#   readinessProbe: httpGet /ready
+	#   startupProbe:   httpGet /startup
+	# -------------------------------------------------------------------------
+	gcs_health {
+		enable_detailed
+		enable_metrics
+	}
+
+	# -------------------------------------------------------------------------
+	# Configuration validation endpoint (local-only by default)
+	# -------------------------------------------------------------------------
+	# Exposes /validate for runtime config validation.
+	# local_only (default: true) restricts access to loopback addresses.
+	# In production, keep local_only true and access via kubectl port-forward.
+	# -------------------------------------------------------------------------
+	#config_validation /validate {
+	#	local_only true
+	#	enable_live
+	#	enable_dry_run
+	#	strict_mode
+	#	validate_on_load
+	#}
+
+	# -------------------------------------------------------------------------
+	# Prometheus metrics endpoint — /metrics
+	# -------------------------------------------------------------------------
+	prometheus {
+		enable_health
+	}
+
+	# -------------------------------------------------------------------------
+	# Multi-bucket routing via filesystem + file_server
+	# -------------------------------------------------------------------------
+	# Named filesystems are declared in the global block above.
+	# Caddy evaluates handle blocks by specificity (longest path first),
+	# so /docs/* and /assets/* match before the catch-all /*.
+	#
+	# To protect a route with OIDC, uncomment the `oidc entra { ... }`
+	# block inside the handle.
+	# -------------------------------------------------------------------------
+
+	# -------------------------------------------------------------------------
+	# Example: Minimal — just a named filesystem
+	# -------------------------------------------------------------------------
+	# handle /minimal/* {
+	#	uri strip_prefix /minimal
+	#	file_server {
+	#		fs minimal-fs
+	#		index index.html
+	#	}
+	# }
+
+	# -------------------------------------------------------------------------
+	# Example: Authentication variants
+	# -------------------------------------------------------------------------
+	# Workload Identity (recommended for GKE/OpenShift)
+	# Declare in global block:
+	#   filesystem wif-fs gcs {
+	#       bucket_name my-bucket
+	#       use_workload_identity
+	#       project_id my-gcp-project
+	#   }
+	#
+	# External account / WIF credential file:
+	#   filesystem ext-fs gcs {
+	#       bucket_name my-bucket
+	#       credentials_config /etc/caddy/wif-credentials.json
+	#       project_id my-gcp-project
+	#   }
+	#
+	# Service account key (dev/test only):
+	#   filesystem sa-fs gcs {
+	#       bucket_name my-bucket
+	#       credentials_file /path/to/service-account.json
+	#   }
+	#
+	# Attribute cache tuning:
+	#   filesystem cached-fs gcs {
+	#       bucket_name my-bucket
+	#       cache_ttl 10m
+	#       cache_max_entries 20000
+	#   }
+	#
+	# Disable attribute cache (every Stat() hits GCS):
+	#   filesystem uncached-fs gcs {
+	#       bucket_name my-bucket
+	#       cache_ttl 0
+	#   }
+
+	# -------------------------------------------------------------------------
+	# Example: Compression — via Caddy's built-in encode directive
+	# -------------------------------------------------------------------------
+	# handle /compressed/* {
+	#	uri strip_prefix /compressed
+	#	encode zstd gzip
+	#	file_server { fs my-fs }
+	# }
+
+	# -------------------------------------------------------------------------
+	# Example: Error handling — via Caddy's handle_errors
+	# -------------------------------------------------------------------------
+	# handle_errors {
+	#	@404 expression {err.status_code} == 404
+	#	handle @404 {
+	#		templates
+	#		rewrite * /errors/404.html
+	#		file_server { fs my-fs }
+	#	}
+	#	handle {
+	#		respond "{err.status_code} {err.status_text}" {err.status_code}
+	#	}
+	# }
+
+	# -------------------------------------------------------------------------
+	# Example: Full-featured — standard Caddy middleware composition
+	# -------------------------------------------------------------------------
+	# handle /full/* {
+	#	uri strip_prefix /full
+	#	encode zstd gzip
+	#	header Cache-Control "public, max-age=86400"
+	#	file_server {
+	#		fs full-fs
+	#		index index.html
+	#		precompressed zstd gzip
+	#	}
+	# }
+
+	# =========================================================================
+	# Active routes below
+	# =========================================================================
+
+	# Compression — zstd preferred, gzip fallback (applies to all routes)
+	# zstd: fastest|default|better|best  gzip: 1-9 (1=fast, 9=best)
+	encode {
+		zstd default
+		gzip 5
+		minimum_length 256
+	}
+
+	# Docs site
+	handle /docs/* {
+		#oidc entra {
+		#	allow {
+		#		user *
+		#	}
+		#}
+		uri strip_prefix /docs
+		file_server {
+			fs docs-fs
+			index index.html
+			precompressed zstd gzip
+		}
+	}
+
+	# Static assets
+	# GET /assets/css/app.css → looks up css/app.css in assets-bucket
+	handle /assets/* {
+		uri strip_prefix /assets
+		file_server {
+			fs assets-fs
+			precompressed zstd gzip
+		}
+	}
+
+	# -------------------------------------------------------------------------
+	# Main site — catch-all from test-bucket
+	# -------------------------------------------------------------------------
+	# Semi-protected — allow anonymous read, require auth for writes.
+	# Uses standard Caddy middleware for compression, caching, etc.
+	# -------------------------------------------------------------------------
+	handle /* {
+		#oidc entra {
+		#	allow {
+		#		anonymous
+		#		method GET HEAD OPTIONS
+		#	}
+		#	allow {
+		#		user *
+		#		method POST PUT PATCH DELETE
+		#	}
+		#}
+
+		# Cache headers
+		header Cache-Control "no-cache"
+
+		# Serve files from GCS
+		file_server {
+			fs main-fs
+			index index.html
+			precompressed zstd gzip
+		}
+	}
+
+	# -------------------------------------------------------------------------
+	# Error handling — branded error pages
+	# -------------------------------------------------------------------------
+	# Embedded error pages from the plugin binary. To override with custom
+	# pages from the GCS bucket, upload /errors/404.html etc. and add a
+	# try_files / file matcher before the embedded fallback.
+	# The embedded pages use Caddy's templates directive for dynamic content
+	# (request ID, path, host).
+	# -------------------------------------------------------------------------
+	handle_errors {
+		@404 expression {err.status_code} == 404
+		handle @404 {
+			rewrite * /404.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+
+		@403 expression {err.status_code} == 403
+		handle @403 {
+			rewrite * /403.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+
+		@5xx expression {err.status_code} >= 500
+		handle @5xx {
+			rewrite * /500.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+
+		# Fallback — generic embedded error page
+		handle {
+			rewrite * /default.html
+			templates
+			file_server {
+				fs error-pages
+			}
+		}
+	}
+}

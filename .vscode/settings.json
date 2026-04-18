@@ -1,0 +1,183 @@
+{
+  "go.useLanguageServer": true,
+  "go.gopath": "/go",
+  "go.goroot": "/usr/local/go",
+  "go.toolsManagement.checkForUpdates": "local",
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "package",
+  "go.vetOnSave": "package",
+  "go.formatTool": "goimports",
+  "go.buildOnSave": "workspace",
+  "go.testFlags": ["-v", "-race"],
+  "go.coverOnSave": true,
+  "go.coverageDecorator": "gutter",
+  "go.generateTestsFlags": ["-exported"],
+  "go.testTimeout": "300s",
+  "go.buildTags": "integration",
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.formatOnType": false,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit",
+    "source.fixAll": "explicit"
+  },
+  "editor.rulers": [80, 120],
+  "editor.tabSize": 4,
+  "editor.insertSpaces": false,
+  "editor.detectIndentation": false,
+  "editor.trimAutoWhitespace": true,
+  "editor.renderWhitespace": "boundary",
+  "files.eol": "\n",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/dist": true,
+    "**/vendor": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/node_modules": true,
+    "**/.vscode": false
+  },
+  "files.watcherExclude": {
+    "**/dist/**": true,
+    "**/vendor/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/vendor": true,
+    "**/node_modules": true,
+    "**/*.log": true
+  },
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.profiles.linux": {
+    "zsh": {
+      "path": "/bin/zsh",
+      "args": ["-l"]
+    },
+    "bash": {
+      "path": "/bin/bash",
+      "args": ["-l"]
+    }
+  },
+  "git.autofetch": true,
+  "git.enableSmartCommit": true,
+  "git.confirmSync": false,
+  "git.defaultCloneDirectory": "/workspace",
+  "vs-kubernetes": {
+    "vs-kubernetes.crd-code-completion": "enabled",
+    "vs-kubernetes.kubectl-path.linux": "/usr/local/bin/kubectl",
+    "vs-kubernetes.helm-path.linux": "/usr/local/bin/helm"
+  },
+  "kubernetes.defaultNamespace": "caddy-fs-gcs",
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json": [
+      "docker-compose*.yml",
+      "docker-compose*.yaml"
+    ],
+    "https://raw.githubusercontent.com/kubernetes/kubernetes/master/api/openapi-spec/swagger.json": [
+      "k8s/**/*.yaml",
+      "k8s/**/*.yml",
+      "kubernetes/**/*.yaml",
+      "kubernetes/**/*.yml"
+    ]
+  },
+  "yaml.customTags": [
+    "!And",
+    "!If",
+    "!Not",
+    "!Equals",
+    "!Or",
+    "!FindInMap sequence",
+    "!Base64",
+    "!Cidr",
+    "!Ref",
+    "!Sub",
+    "!GetAtt",
+    "!GetAZs",
+    "!ImportValue",
+    "!Select",
+    "!Split",
+    "!Join sequence"
+  ],
+  "json.schemas": [
+    {
+      "fileMatch": ["/devcontainer.json", "/.devcontainer/devcontainer.json"],
+      "url": "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/main/schemas/devContainer.schema.json"
+    }
+  ],
+  "docker.enableDockerComposeLanguageService": true,
+  "docker.dockerPath": "/usr/bin/docker",
+  "testExplorer.useNativeTesting": true,
+  "go.testExplorer.enable": true,
+  "todo-tree.general.tags": [
+    "BUG",
+    "HACK",
+    "FIXME",
+    "TODO",
+    "XXX",
+    "[ ]",
+    "[x]"
+  ],
+  "todo-tree.regex.regex": "(//|#|<!--|;|/\\*|^|^\\s*(-|\\d+.))\\s*($TAGS)",
+  "cSpell.words": [
+    "Caddyfile",
+    "caddy",
+    "caddyserver",
+    "gcs",
+    "googleapis",
+    "kubernetes",
+    "kubectl",
+    "kustomize",
+    "tekton",
+    "kyverno",
+    "prometheus",
+    "grafana",
+    "opentelemetry",
+    "otel",
+    "workload",
+    "entraid",
+    "oidc",
+    "goproxy",
+    "gosumdb",
+    "xcaddy"
+  ],
+  "[go]": {
+    "editor.defaultFormatter": "golang.go",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": false
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[dockerfile]": {
+    "editor.defaultFormatter": "ms-azuretools.vscode-docker",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+  "[markdown]": {
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "comments": "off",
+      "strings": "off",
+      "other": "off"
+    }
+  },
+  "containers.containerCommand": "/usr/bin/docker",
+  "containers.enableComposeLanguageService": true
+}

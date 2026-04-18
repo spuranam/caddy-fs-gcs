@@ -1,0 +1,112 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Caddy GCS Proxy",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/caddy",
+      "args": ["run", "--config", "examples/Caddyfile.development"],
+      "env": {
+        "CADDY_ADMIN": "localhost:2019",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/workspace/.gcp/credentials.json",
+        "USE_GCS": "true"
+      },
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true,
+      "trace": "verbose"
+    },
+    {
+      "name": "Debug Caddy GCS Proxy (Offline)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/caddy",
+      "args": ["run", "--config", "examples/Caddyfile.development"],
+      "env": {
+        "CADDY_ADMIN": "localhost:2019",
+        "USE_GCS": "false"
+      },
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true,
+      "trace": "verbose"
+    },
+    {
+      "name": "Debug CaddyCtl",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/caddyctl",
+      "args": ["--help"],
+      "env": {},
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true
+    },
+    {
+      "name": "Debug Current Test",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${workspaceFolder}",
+      "args": ["-test.v"],
+      "env": {},
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true
+    },
+    {
+      "name": "Debug Test File",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}",
+      "args": ["-test.v"],
+      "env": {},
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true
+    },
+    {
+      "name": "Debug Package",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${fileDirname}",
+      "env": {},
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true
+    },
+    {
+      "name": "Attach to Process",
+      "type": "go",
+      "request": "attach",
+      "mode": "local",
+      "processId": 0,
+      "showLog": true
+    },
+    {
+      "name": "Debug with Custom Args",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/caddy",
+      "args": [],
+      "env": {},
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "showLog": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Debug Full Stack",
+      "configurations": ["Debug Caddy GCS Proxy"],
+      "stopAll": true
+    }
+  ]
+}

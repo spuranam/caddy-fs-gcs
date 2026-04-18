@@ -1,0 +1,82 @@
+version: "2"
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  enable:
+    - asciicheck
+    - bodyclose
+    - dogsled
+    - dupl
+    - durationcheck
+    - errcheck
+    - errorlint
+    - exhaustive
+    - gochecknoinits
+    - goheader
+    - gomodguard
+    - goprintffuncname
+    - importas
+    - makezero
+    - misspell
+    - nakedret
+    - nilerr
+    - prealloc
+    - predeclared
+    - promlinter
+    - staticcheck
+    - tparallel
+    - unparam
+    - whitespace
+    - gosec
+    - noctx
+  disable:
+    # forcetypeassert: kept disabled — informer event handlers receive interface{}/any
+    # from client-go and type-assert with ok-checks; the linter flags the few
+    # remaining assertions in test helpers where panicking is acceptable.
+    - forcetypeassert
+  settings:
+    gocritic:
+      disabled-checks:
+        - unlambda
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      # Exclude some linters from running on tests files.
+      - path: _test\.go
+        linters:
+          # - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - noctx
+      # Exclude noctx from testutil (test helper package)
+      - path: internal/testutil/
+        linters:
+          - noctx
+          - gosec
+      #- path: pkg\/(api\/.*|cmd\/cldctl\/.*)\.go$
+      #  linters:
+      #    - dupl
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

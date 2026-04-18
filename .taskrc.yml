@@ -1,0 +1,69 @@
+# Global Task Configuration
+# This file provides default settings for all Task projects
+# Can be overridden by project-specific Taskfile.yaml
+
+# Global settings
+verbose: false
+concurrency: 4
+insecure: false
+
+# Remote settings
+remote_offline: false
+remote_timeout: 30s
+remote_expiry: 1h
+
+# Platform compatibility
+# Task v3.45.3 includes built-in core utilities for Windows
+# This means commands like cp, mv, mkdir work by default on Windows
+# without extra setup or platform-specific conditionals
+
+# Development settings
+# These can be overridden per project
+defaults:
+  # Default task to run when no task is specified
+  default: help
+
+  # Default working directory
+  dir: .
+
+  # Default environment variables
+  env:
+    # Enable Go modules
+    GO111MODULE: "on"
+    # Enable Go build cache
+    GOCACHE: "on"
+    # Set Go proxy
+    GOPROXY: "https://proxy.golang.org,direct"
+    # Enable Go sum database
+    GOSUMDB: "sum.golang.org"
+
+# Task-specific settings
+tasks:
+  # Global task aliases that work across all projects
+  help:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
+  status:
+    desc: "Show project status"
+    cmds:
+      - echo "📋 Project Status"
+      - echo "Platform: $(uname -s 2>/dev/null || echo Windows)"
+      - echo "Go Version: $(go version 2>/dev/null || echo 'Go not installed')"
+      - echo "Task Version: $(task --version 2>/dev/null || echo 'Task not installed')"
+
+# Platform-specific overrides (if needed)
+# These are rarely needed with Task v3.45.3's built-in utilities
+platforms:
+  windows:
+    # Windows-specific settings (if any)
+    env:
+      # Windows-specific environment variables
+      PATHEXT: ".EXE;.BAT;.CMD;.COM;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC"
+
+  unix:
+    # Unix-specific settings (if any)
+    env:
+      # Unix-specific environment variables
+      SHELL: "/bin/bash"
